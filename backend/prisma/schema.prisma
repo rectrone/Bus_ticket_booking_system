@@ -1,0 +1,210 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============= USER MANAGEMENT =============
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  password          String
+  firstName         String
+  lastName          String
+  phone             String
+  role              Role      @default(PASSENGER)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  bookings          Booking[]
+  refreshTokens     RefreshToken[]
+
+  @@index([email])
+  @@index([role])
+}
+
+enum Role {
+  PASSENGER
+  ADMIN
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String    @unique
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ============= BUS & ROUTES =============
+model Bus {
+  id              String      @id @default(cuid())
+  busNumber       String      @unique
+  type            BusType
+  totalSeats      Int
+  manufacturer    String?
+  registrationNum String      @unique
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  schedules       Schedule[]
+  seats           Seat[]
+
+  @@index([busNumber])
+}
+
+enum BusType {
+  ECONOMY
+  COMFORT
+  SLEEPER
+}
+
+model Route {
+  id              String      @id @default(cuid())
+  sourceCity      String
+  destCity        String
+  distance        Int         // in kilometers
+  baseFare        Float
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  schedules       Schedule[]
+
+  @@unique([sourceCity, destCity])
+  @@index([sourceCity])
+  @@index([destCity])
+}
+
+model Schedule {
+  id              String      @id @default(cuid())
+  busId           String
+  bus             Bus         @relation(fields: [busId], references: [id], onDelete: Cascade)
+  routeId         String
+  route           Route       @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  
+  departureTime   DateTime
+  arrivalTime     DateTime
+  availableSeats  Int
+  fare            Float
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  seats           Seat[]
+  bookings        Booking[]
+
+  @@unique([busId, routeId, departureTime])
+  @@index([busId])
+  @@index([routeId])
+  @@index([departureTime])
+}
+
+// ============= SEAT MANAGEMENT =============
+model Seat {
+  id              String      @id @default(cuid())
+  busId           String
+  bus             Bus         @relation(fields: [busId], references: [id], onDelete: Cascade)
+  scheduleId      String
+  schedule        Schedule    @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  
+  seatNumber      String
+  status          SeatStatus  @default(AVAILABLE)
+  
+  bookingSeats    BookingSeat[]
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@unique([scheduleId, seatNumber])
+  @@index([scheduleId])
+  @@index([status])
+}
+
+enum SeatStatus {
+  AVAILABLE
+  BOOKED
+  LOCKED
+}
+
+// ============= BOOKING SYSTEM =============
+model Booking {
+  id              String      @id @default(cuid())
+  pnr             String      @unique  // PNR-style booking ID
+  userId          String
+  user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scheduleId      String
+  schedule        Schedule    @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  
+  passengerName   String
+  passengerEmail  String
+  passengerPhone  String
+  
+  totalFare       Float
+  bookingStatus   BookingStatus @default(PENDING)
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  bookingSeats    BookingSeat[]
+  payment         Payment?
+
+  @@index([userId])
+  @@index([scheduleId])
+  @@index([pnr])
+  @@index([bookingStatus])
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  FAILED
+}
+
+model BookingSeat {
+  id          String    @id @default(cuid())
+  bookingId   String
+  booking     Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  seatId      String
+  seat        Seat      @relation(fields: [seatId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingId, seatId])
+  @@index([bookingId])
+  @@index([seatId])
+}
+
+// ============= PAYMENT =============
+model Payment {
+  id              String      @id @default(cuid())
+  bookingId       String      @unique
+  booking         Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  
+  amount          Float
+  currency        String      @default("INR")
+  paymentMethod   String      @default("CREDIT_CARD")
+  transactionId   String      @unique
+  paymentStatus   PaymentStatus @default(PENDING)
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([bookingId])
+  @@index([transactionId])
+  @@index([paymentStatus])
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
